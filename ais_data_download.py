@@ -2,6 +2,8 @@ import requests
 import pandas as pd
 import zipfile
 import urllib
+import os
+import glob
 from pathlib import Path
 from tqdm import tqdm
 
@@ -11,6 +13,7 @@ class AISDataDownloader:
         self.download_path = 'data/'
 
     def download_date_range(self, date_range: pd.core.indexes.datetimes.DatetimeIndex):
+        """Download daily AIS data for a given date range formatted as a pandas DatetimeIndex."""
         for date in tqdm(date_range, desc='Downloading AIS data'):
             # Check if file is downloaded before making HTML request
             url = urllib.parse.urljoin(self.base_url, f'{date.year}/AIS_{date.strftime("%Y_%m_%d")}.zip')
@@ -36,5 +39,11 @@ class AISDataDownloader:
                 else:
                     print(f"Failed to download file: {url}. Status code: {response.status_code}")
 
+    def delete_zip_files(self):
+        """Delete all zip files in the download directory."""
+        zip_files = glob.glob(os.path.join(self.download_path, '*.zip'))
+
+        for file in zip_files:
+            os.remove(file)
 
         
