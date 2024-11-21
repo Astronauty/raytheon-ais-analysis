@@ -1,0 +1,10 @@
+Group,Id
+Military,0
+Tanker,1
+Cargo,2
+Fishing,3
+Passenger,4
+Pleasure Craft,5
+Tug Tow,6
+Other,7
+Not Available,8
