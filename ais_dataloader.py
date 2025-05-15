@@ -3,6 +3,7 @@ import pandas as pd
 import pathlib
 import numpy as np
 import torch 
+import logging
 from torch import nn
 from torch.optim import lr_scheduler
 from torch.utils.data import Dataset, DataLoader
@@ -13,45 +14,132 @@ from sklearn.model_selection import train_test_split
 
 from torch.utils.tensorboard import SummaryWriter
 
-class Sing
-
-class AISSingleStepPredictionDataset(Dataset):
-    def __init__(self, csv_path ,train): # TODO: handle multiple csv imports
+class AISTrajectoryRegressionDataset(Dataset):
+    """
+    Dataset for trajectory classification of AIS data.
+    """
+    def __init__(self, date_range, mode : str = "classification"): # TODO: handle multiple csv imports
         self.KNOTS_TO_METERS_PER_SECOND = 0.514444
         
-        self.df = pd.read_csv(csv_path)
+        self.create_combined_df(date_range) # combined csvs into self.df
+        self.process_AIS_data()
 
+        
+        # self.df = pd.read_csv(csv_path)
         train_df, test_df = train_test_split(self.df, test_size=0.2)
         
+    def create_combined_df(self, date_range):
+        """
+        Create a combined dataframe from multiple CSV files.
+        """
+        # Create a list to hold the dataframes
+        df_list = []
+        csv_folder_path = "data/"
+        for date in tqdm(date_range, desc='Combining AIS CSVs into a single df'):
+            csv_filename = f"AIS_{date.year}_{date.month:02d}_{date.day:02d}.csv"
+            csv_path = os.path.join(csv_folder_path, csv_filename)
+            if os.path.exists(csv_path):
+                logging.info(f"Loading {csv_filename}")
+                daily_df = pd.read_csv(csv_path)
+                df_list.append(daily_df)
+            else:
+                logging.warning(f"File {csv_filename} not found. Make sure to download the desired date ranges via cli_ais_dataloader.py as described in the README. Skipping.")
+        
+        if df_list:
+            self.df = pd.concat(df_list, ignore_index=True)
+        else:
+            raise ValueError("No CSV files found in the specified date range.")
+        
+    def process_AIS_data(self):
+        self.remove_AIS_artifacts()
+        print(self.df.head()) 
+        self.df['BaseDateTime'] = pd.to_datetime(self.df['BaseDateTime'])
+        
+        # Group by MMSI and compute seconds since start for each group
+        self.df['SecondsSinceStart'] = 0  # Initialize column
+        self.trajectories_by_mmsi = []
+        self.MMSI_groups = self.df.groupby('MMSI')
+        
+        for mmsi, group in self.MMSI_groups:
+            group = group.sort_values(by='BaseDateTime')  # Ensure sorted by time
+            earliest_time = group['BaseDateTime'].min()
+            group['SecondsSinceStart'] = (group['BaseDateTime'] - earliest_time).dt.total_seconds()
+            self.df.loc[group.index, 'SecondsSinceStart'] = group['SecondsSinceStart']
+            
+            seconds_since_start = group['SecondsSinceStart'].values
+            
+            state_space_trajectory = np.array([
+                self.ais_to_state_space(row['LON'], row['LAT'], row['Heading'], row['SOG'])
+                for _, row in group.iterrows()
+            ])
+            
+            # Store the state space trajectories for every MMSI
+            self.trajectories_by_mmsi.append((seconds_since_start, state_space_trajectory))
+            
+
+        
+    def ais_to_state_space(self, LON, LAT, Heading, SOG):
+        x = 111320 * LON
+        y = 111320 * LAT
+        theta = np.radians(Heading)
+        
+        x_dot = 0.514444 * SOG * np.cos(theta) # Convert to m/s
+        y_dot = 0.514444 * SOG * np.sin(theta) # Convert to m/s
+        # TODO: add angular rate phid
+
+        return np.array([x, y, theta, x_dot, y_dot, 0])
+    
+    
+    def remove_AIS_artifacts(self):
+        """
+        Remove artifacts from the AIS data. Removed based on invalid msgs as defined by: https://www.navcen.uscg.gov/ais-class-a-reports
+        """
+        
+        start_row_count = self.df.shape[0]
+        self.df = self.df[self.df['COG'] != 360]
+        self.df = self.df[self.df['SOG'] != 102.3]
+        self.df = self.df[self.df['LAT'] != 181]
+        self.df = self.df[self.df['Heading'] != 511]
+        self.df.dropna(inplace=True)
+        end_row_count = self.df.shape[0]
+        
+        print(f"Removed {start_row_count - end_row_count} out of {start_row_count} rows due to invalid COG, SOG, LAT, or Heading values.")
+
+        
+    
     def __len__(self):
-        return self.df.shape[0]-1 # subtract 1 since this is single step state prediction
+        return len(self.trajectories_by_mmsi) # subtract 1 since this is single step state prediction
     
     def __getitem__(self, idx):
-        dt = self.df.iloc[idx+1] - [idx]
+        times, state_trajectory = self.trajectories_by_mmsi[idx]
+        return torch.from_numpy(times).float(), torch.from_numpy(state_trajectory).float()
+    
+    # def __getitem__(self, idx):
+    #     dt = self.df.iloc[idx+1] - [idx]
         
-        # Get state at timestep k
-        x_k = self.df.iloc[idx]['LON']
-        y_k = self.df.iloc[idx]['LAT']
-        phi_k = self.df.iloc[idx]['HEADING']
-        COG = self.df.iloc[idx]['COG'] # angle that the instantaneous velocity makes in world coords
-        SOG = self.df.iloc[idx]['SOG'] # speed of a vessel in relation to a fixed point on the Earth's surface
-        xd_k = np.cos(COG) * SOG * self.KNOTS_TO_METERS_PER_SECOND
-        yd_k = np.sin(COG) * SOG * self.KNOTS_TO_METERS_PER_SECOND
-        phid_k = 0 # TODO: how to better estimate angular rate?
+    #     # Get state at timestep k
+    #     x_k = self.df.iloc[idx]['LON']
+    #     y_k = self.df.iloc[idx]['LAT']
+    #     phi_k = self.df.iloc[idx]['HEADING']
+    #     COG = self.df.iloc[idx]['COG'] # angle that the instantaneous velocity makes in world coords
+    #     SOG = self.df.iloc[idx]['SOG'] # speed of a vessel in relation to a fixed point on the Earth's surface
+    #     xd_k = np.cos(COG) * SOG * self.KNOTS_TO_METERS_PER_SECOND
+    #     yd_k = np.sin(COG) * SOG * self.KNOTS_TO_METERS_PER_SECOND
+    #     phid_k = 0 # TODO: how to better estimate angular rate?
         
-        # Get state at timestep kp1
-        x_kp1 = self.df.iloc[idx]['LON']
-        y_kp1 = self.df.iloc[idx]['LAT']
-        phi_kp1 = self.df.iloc[idx]['HEADING']
-        COG_kp1 = self.df.iloc[idx]['COG'] # angle that the instantaneous velocity makes in world coords
-        SOG_kp1 = self.df.iloc[idx]['SOG'] # speed of a vessel in relation to a fixed point on the Earth's surface
-        xd_kp1 = np.cos(COG_kp1) * SOG_kp1 * self.KNOTS_TO_METERS_PER_SECOND
-        yd_kp1 = np.sin(COG_kp1) * SOG_kp1 * self.KNOTS_TO_METERS_PER_SECOND
-        phid_kp1 = 0 # TODO: how to better estimate angular rate?
+    #     # Get state at timestep kp1
+    #     x_kp1 = self.df.iloc[idx]['LON']
+    #     y_kp1 = self.df.iloc[idx]['LAT']
+    #     phi_kp1 = self.df.iloc[idx]['HEADING']
+    #     COG_kp1 = self.df.iloc[idx]['COG'] # angle that the instantaneous velocity makes in world coords
+    #     SOG_kp1 = self.df.iloc[idx]['SOG'] # speed of a vessel in relation to a fixed point on the Earth's surface
+    #     xd_kp1 = np.cos(COG_kp1) * SOG_kp1 * self.KNOTS_TO_METERS_PER_SECOND
+    #     yd_kp1 = np.sin(COG_kp1) * SOG_kp1 * self.KNOTS_TO_METERS_PER_SECOND
+    #     phid_kp1 = 0 # TODO: how to better estimate angular rate?
         
-        # x = [x, y, phi, xd, yd, phid]
-        state_k = np.array([x_k, y_k, phi_k, xd_k, yd_k, phid_k])
-        state_kp1 = np.array(x_kp1, y_kp1, phi_kp1, xd_kp1, yd_kp1, phid_kp1)
+    #     # x = [x, y, phi, xd, yd, phid]
+    #     state_k = np.array([x_k, y_k, phi_k, xd_k, yd_k, phid_k])
+    #     state_kp1 = np.array(x_kp1, y_kp1, phi_kp1, xd_kp1, yd_kp1, phid_kp1)
         
         
         return state_k, state_kp1
