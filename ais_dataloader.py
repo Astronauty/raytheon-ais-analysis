@@ -20,7 +20,7 @@ class AISTrajectoryRegressionDataset(Dataset):
     """
     def __init__(self, date_range, mode : str = "classification"): # TODO: handle multiple csv imports
         self.KNOTS_TO_METERS_PER_SECOND = 0.514444
-        
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.create_combined_df(date_range) # combined csvs into self.df
         self.process_AIS_data()
 
@@ -112,7 +112,7 @@ class AISTrajectoryRegressionDataset(Dataset):
     
     def __getitem__(self, idx):
         times, state_trajectory = self.trajectories_by_mmsi[idx]
-        return torch.from_numpy(times).float(), torch.from_numpy(state_trajectory).float()
+        return torch.from_numpy(times).float().to(self.device), torch.from_numpy(state_trajectory).float().to(self.device)
     
     # def __getitem__(self, idx):
     #     dt = self.df.iloc[idx+1] - [idx]
@@ -142,4 +142,4 @@ class AISTrajectoryRegressionDataset(Dataset):
     #     state_kp1 = np.array(x_kp1, y_kp1, phi_kp1, xd_kp1, yd_kp1, phid_kp1)
         
         
-        return state_k, state_kp1
+        # return state_k, state_kp1
