@@ -18,9 +18,9 @@ class AISTrajectoryRegressionDataset(Dataset):
     """
     Dataset for trajectory classification of AIS data.
     """
-    def __init__(self, date_range, mode : str = "classification"): # TODO: handle multiple csv imports
+    def __init__(self, date_range, device, mode : str = "classification"): # TODO: handle multiple csv imports
         self.KNOTS_TO_METERS_PER_SECOND = 0.514444
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
         self.create_combined_df(date_range) # combined csvs into self.df
         self.process_AIS_data()
 
@@ -51,8 +51,8 @@ class AISTrajectoryRegressionDataset(Dataset):
             raise ValueError("No CSV files found in the specified date range.")
         
     def process_AIS_data(self):
+        print("Processing AIS data...")
         self.remove_AIS_artifacts()
-        print(self.df.head()) 
         self.df['BaseDateTime'] = pd.to_datetime(self.df['BaseDateTime'])
         
         # Group by MMSI and compute seconds since start for each group
@@ -72,9 +72,20 @@ class AISTrajectoryRegressionDataset(Dataset):
                 self.ais_to_state_space(row['LON'], row['LAT'], row['Heading'], row['SOG'])
                 for _, row in group.iterrows()
             ])
+
             
-            # Store the state space trajectories for every MMSI
-            self.trajectories_by_mmsi.append((seconds_since_start, state_space_trajectory))
+        # Compute phi_dot for the group
+        heading = group['Heading'].values
+        times = group['SecondsSinceStart'].values
+        phi_dot = np.zeros(len(heading))
+        if len(heading) > 1:
+            phi_dot[1:] = np.diff(heading) / np.diff(times)
+            phi_dot[0] = phi_dot[1]
+        else:
+            phi_dot[0] = 0  # Default to 0 if there's only one entry
+            
+        # Store the state space trajectories for every MMSI
+        self.trajectories_by_mmsi.append((mmsi, seconds_since_start, state_space_trajectory))
             
 
         
@@ -85,8 +96,18 @@ class AISTrajectoryRegressionDataset(Dataset):
         
         x_dot = 0.514444 * SOG * np.cos(theta) # Convert to m/s
         y_dot = 0.514444 * SOG * np.sin(theta) # Convert to m/s
+
         # TODO: add angular rate phid
 
+        # Calculate phi_dot (angular rate) using finite differencing
+        # if len(self.df) > 1:
+        #     phi_dot = np.zeros(len(self.df))
+        #     phi_dot[1:] = np.diff(self.df['Heading']) / np.diff(self.df['SecondsSinceStart'])
+        #     phi_dot[0] = phi_dot[1]  # Reuse the second value for the first entry
+        # else:
+        #     phi_dot = np.array([0])  # Default to 0 if there's only one entry
+
+        # NOTE: phi_dot cannot be computed per element since it is not in the AIS data, so it is computed via finite diff in process_AIS_data
         return np.array([x, y, theta, x_dot, y_dot, 0])
     
     
@@ -105,14 +126,17 @@ class AISTrajectoryRegressionDataset(Dataset):
         
         print(f"Removed {start_row_count - end_row_count} out of {start_row_count} rows due to invalid COG, SOG, LAT, or Heading values.")
 
-        
     
     def __len__(self):
         return len(self.trajectories_by_mmsi) # subtract 1 since this is single step state prediction
     
     def __getitem__(self, idx):
-        times, state_trajectory = self.trajectories_by_mmsi[idx]
-        return torch.from_numpy(times).float().to(self.device), torch.from_numpy(state_trajectory).float().to(self.device)
+        mmsi, times, state_trajectory = self.trajectories_by_mmsi[idx]
+        return (
+            mmsi,
+            torch.from_numpy(times).float().to(self.device), 
+            torch.from_numpy(state_trajectory).float().to(self.device)
+        )
     
     # def __getitem__(self, idx):
     #     dt = self.df.iloc[idx+1] - [idx]
