@@ -73,20 +73,26 @@ class AISTrajectoryRegressionDataset(Dataset):
                 for _, row in group.iterrows()
             ])
 
-            
-        # Compute phi_dot for the group
-        heading = group['Heading'].values
-        times = group['SecondsSinceStart'].values
-        phi_dot = np.zeros(len(heading))
-        if len(heading) > 1:
-            phi_dot[1:] = np.diff(heading) / np.diff(times)
-            phi_dot[0] = phi_dot[1]
-        else:
-            phi_dot[0] = 0  # Default to 0 if there's only one entry
-            
-        # Store the state space trajectories for every MMSI
-        self.trajectories_by_mmsi.append((mmsi, seconds_since_start, state_space_trajectory))
-            
+                
+            # Compute phi_dot for the group
+            heading = group['Heading'].values
+            times = group['SecondsSinceStart'].values
+            phi_dot = np.zeros(len(heading))
+            if len(heading) > 1:
+                dt = np.diff(times)
+                d_heading = np.diff(heading)
+                # Avoid division by zero
+                dt[dt == 0] = np.nan
+                phi_dot[1:] = d_heading / dt
+                # Replace NaNs and infs with 0
+                phi_dot = np.nan_to_num(phi_dot, nan=0.0, posinf=0.0, neginf=0.0)
+                phi_dot[0] = phi_dot[1] if len(phi_dot) > 1 else 0
+            else:
+                phi_dot[0] = 0  # Default to 0 if there's only one entry
+                
+            # Store the state space trajectories for every MMSI
+            self.trajectories_by_mmsi.append((mmsi, seconds_since_start, state_space_trajectory))
+                
 
         
     def ais_to_state_space(self, LON, LAT, Heading, SOG):
