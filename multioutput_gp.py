@@ -61,8 +61,9 @@ def train_model(model, likelihood, train_x, train_y, num_epochs=500, lr=0.01):
     
     writer.flush()
     writer.close()
-    print(f"Training completed. Loss: {loss.item()}")    
-    return model, likelihood
+    # print(f"Training completed. Loss: {loss.item()}")    
+    
+    return loss, model, likelihood
         
 def eval_model(model, likelihood, test_x):
     model.eval()
