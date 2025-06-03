@@ -10,6 +10,8 @@ import matplotlib.ticker as mticker
 
 def plot_single_ship_state_trajectory(mmsi, t, state_trajectory):
     # Plot time vs x, y, theta, x_dot, y_dot, theta_dot
+    
+    sns.set_theme(style="darkgrid")
 
     # Use ScalarFormatter with scientific notation and 2 decimals
     # fmt = mticker.ScalarFormatter(useMathText=True)
@@ -115,6 +117,8 @@ def plot_single_ship_state_trajectory(mmsi, t, state_trajectory):
 
 def plot_single_ship_path(mmsi, t, state_trajectory):
     # Plot the path of the ship in the x-y plane
+    sns.set_theme(style="darkgrid")
+    
     plt.figure(figsize=(15, 10))
     plt.plot(state_trajectory[:, 0], state_trajectory[:, 1], marker='o', markersize=2)
     plt.title(f'Ship Path for MMSI {mmsi}')
