@@ -17,25 +17,45 @@ class MultiOutputExactGPModel(gpytorch.models.ExactGP):
         super(MultiOutputExactGPModel, self).__init__(train_x, train_y, likelihood)
         self.num_outputs = num_outputs
 
-        # Define a mean module for multitask GPs
+        ### Define a mean module for multitask GPs ###
         self.mean_module = gpytorch.means.MultitaskMean(
             gpytorch.means.ConstantMean(), num_tasks=num_outputs
         )
 
-        # Define a covariance module for multitask GPs
+        ### Define a covariance module for multitask GPs ###
+        # self.covar_module = gpytorch.kernels.MultitaskKernel(
+        #     gpytorch.kernels.ScaleKernel(
+        #         gpytorch.kernels.RBFKernel() + gpytorch.kernels.LinearKernel()
+        #     ),
+        # num_tasks=num_outputs, rank=1
+        # )
+        
+        ## Multitask Kernel
         self.covar_module = gpytorch.kernels.MultitaskKernel(
-            gpytorch.kernels.RBFKernel(), num_tasks=num_outputs, rank=1
-        )
+            gpytorch.kernels.RBFKernel() + gpytorch.kernels.LinearKernel(),
+            num_tasks=num_outputs, rank=1
+            )
 
+        ## Independent Multitask Kernel
+        # self.covar_module = gpytorch.kernels.IndependentMultitaskKernel(
+        #     gpytorch.kernels.RBFKernel() + gpytorch.kernels.LinearKernel(),
+        #     num_tasks=num_outputs,
+        #     rank=1
+        # )
+        
     def forward(self, x):
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultitaskMultivariateNormal(mean_x, covar_x)
     
 
-def train_model(model, likelihood, train_x, train_y, num_epochs=500, lr=0.01):
+def train_model(model, likelihood, train_x, train_y, num_epochs=500, lr=0.01, mmsi=None):
     # Log the training loss to TensorBoard
-    log_dir = f"logs/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    if mmsi is None:
+        log_dir = f"logs/{mmsi}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    else:
+        log_dir = f"logs/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        
     writer = SummaryWriter(log_dir=log_dir)
     
     model.to(device)
@@ -47,18 +67,19 @@ def train_model(model, likelihood, train_x, train_y, num_epochs=500, lr=0.01):
     optimizer = torch.optim.Adam(model.parameters(), lr= 0.01)
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
     
-    for i in tqdm(range(num_epochs), desc="GP Training Progress"):
+    for i in tqdm(range(num_epochs), desc=f"GP Training Progress"):
         optimizer.zero_grad()
         output = model(train_x)
         loss = -mll(output, train_y)
         loss.backward()
         optimizer.step()
 
-        writer.add_scalar("Training Loss", loss.item(), i)
-        writer.add_scalar("Lengthscale", model.covar_module.data_covar_module.lengthscale.item(), i)
-        writer.add_scalar("Noise", model.likelihood.noise.item(), i)
-        # writer.add_scalar("Mean", model.mean_module.base_means.constant.item(), i)
-    
+        tag_prefix = f"{mmsi}/" if mmsi is not None else ""
+        writer.add_scalar(f"Training Loss/{tag_prefix}", loss.item(), i)
+        writer.add_scalar(f'Length Scale/{tag_prefix}', model.covar_module.data_covar_module.kernels[0].lengthscale.item(), i)
+        writer.add_scalar(f'Variance/{tag_prefix}', model.covar_module.data_covar_module.kernels[1].variance.item(), i)
+        
+            
     writer.flush()
     writer.close()
     # print(f"Training completed. Loss: {loss.item()}")    
@@ -67,8 +88,8 @@ def train_model(model, likelihood, train_x, train_y, num_epochs=500, lr=0.01):
         
 def eval_model(model, likelihood, test_x):
     model.eval()
-    likelihood.eval
-    with torch.no_grad(), gpytorch.settings.fast_pred_var():
+    likelihood.eval()
+    with torch.no_grad(), gpytorch.settings.fast_pred_var(), gpytorch.settings.cholesky_jitter(1e-3):
         observed_pred = likelihood(model(test_x))
         
         return observed_pred
@@ -91,7 +112,7 @@ def plot_gp(train_x, train_y, test_x, observed_pred):
             for i in range(3):
                 ax = axes[0, i]
                 # Plot training data as black stars
-                ax.scatter(train_x.cpu().numpy().flatten(), train_y.cpu().numpy()[:, i], color=colormap[i], marker='*')
+                ax.scatter(train_x.cpu().numpy().flatten(), train_y.cpu().numpy()[:, i], color=colormap[i], marker='x')
                 # Plot predictive means
                 ax.plot(test_x.cpu().numpy().flatten(), observed_pred.mean[:, i].cpu().numpy(), color=colormap[i])
                 # Plot confidence bounds
@@ -107,7 +128,7 @@ def plot_gp(train_x, train_y, test_x, observed_pred):
             for i in range(3, 6):
                 ax = axes[1, i - 3]
                 # Plot training data as black stars
-                ax.scatter(train_x.cpu().numpy().flatten(), train_y.cpu().numpy()[:, i], color=colormap[i], marker='*')
+                ax.scatter(train_x.cpu().numpy().flatten(), train_y.cpu().numpy()[:, i], color=colormap[i], marker='x')
                 # Plot predictive means
                 ax.plot(test_x.cpu().numpy().flatten(), observed_pred.mean[:, i].cpu().numpy(), color=colormap[i])
                 # Plot confidence bounds
@@ -116,6 +137,7 @@ def plot_gp(train_x, train_y, test_x, observed_pred):
                 if i == 0 or i == 1:
                     lower_bound /= 1.1
                     upper_bound *= 1.1
+                    
                 ax.fill_between(test_x.cpu().numpy().flatten(), lower_bound, upper_bound, color=colormap[i], alpha=0.2)
                 ax.set_ylabel(dof_labels[i])
 
@@ -128,7 +150,7 @@ def plot_gp(train_x, train_y, test_x, observed_pred):
             #     plt.Line2D([0], [0], color=colormap[i], lw=2, label=f'DoF {dof_labels[i]}') for i in range(6)
             # ]
             legend_elements = []
-            legend_elements.append(plt.Line2D([0], [0], color='black', marker='*', linestyle='None', label='Observed Data'))
+            legend_elements.append(plt.Line2D([0], [0], color='black', marker='.', label='Observed Data'))
             legend_elements.append(plt.Line2D([0], [0], color='black', linestyle='-', label='Predictive Mean'))
             f.legend(handles=legend_elements, loc='upper center', ncol=4, bbox_to_anchor=(0.5, 1.05))
             # Increase font size of axis labels

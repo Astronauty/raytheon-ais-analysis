@@ -2,29 +2,56 @@ import os
 import pandas as pd
 import pathlib
 import numpy as np
-import torch 
 import logging
+import pickle
+
+import torch
 from torch import nn
 from torch.optim import lr_scheduler
 from torch.utils.data import Dataset, DataLoader
 
+from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
-
 from sklearn.model_selection import train_test_split
-
 from torch.utils.tensorboard import SummaryWriter
 
 class AISTrajectoryRegressionDataset(Dataset):
     """
     Dataset for trajectory classification of AIS data.
     """
-    def __init__(self, date_range, device, mode : str = "classification"): # TODO: handle multiple csv imports
+    def __init__(self, date_range, device, scale_trajectories=True, mode : str = "classification"): # TODO: handle multiple csv imports
         self.KNOTS_TO_METERS_PER_SECOND = 0.514444
         self.device = device
-        self.create_combined_df(date_range) # combined csvs into self.df
-        self.process_AIS_data()
-
         
+        # Check if the date range df has already been processed and cached
+        start_str = date_range[0].strftime("%Y_%m_%d")
+        end_str = date_range[-1].strftime("%Y_%m_%d")
+        processed_data_dir = "data/processed"
+        cache_filename = os.path.join(processed_data_dir, f"processed_AIS_df_{start_str}_{end_str}.pkl")
+        
+        if os.path.exists(cache_filename):
+            print(f"Loading cached dataframe from {cache_filename}")
+            with open(cache_filename, 'rb') as f:
+                cache = pickle.load(f)
+                self.df = cache['df']
+                self.trajectories_by_mmsi = cache['trajectories_by_mmsi']
+        else:
+            self.create_combined_df(date_range) # combined csvs into self.df
+            self.process_AIS_data()
+            with open(cache_filename, "wb") as f:
+                pickle.dump({
+                    'df': self.df,
+                    'trajectories_by_mmsi': self.trajectories_by_mmsi
+                }, f)
+            print(f"Saved processed dataset to: {cache_filename}")
+            
+        self.scale_trajectories()
+        self.print_stats()
+        
+        # Initialize vessel group mappings
+        self._init_vessel_group_mappings()
+        
+
         # self.df = pd.read_csv(csv_path)
         train_df, test_df = train_test_split(self.df, test_size=0.2)
         
@@ -50,6 +77,56 @@ class AISTrajectoryRegressionDataset(Dataset):
         else:
             raise ValueError("No CSV files found in the specified date range.")
         
+    def _init_vessel_group_mappings(self):
+        """
+        Maps AIS vessel type codes to human-readable group names and IDs.
+        """
+        vessel_groups = {}
+        vessel_groups["Cargo"] = np.concatenate([np.arange(70, 80), [1003, 1004, 1016]])
+        vessel_groups["Fishing"] = np.array([30, 1001, 1002])
+        vessel_groups["Military"] = np.array([35])
+        vessel_groups["Not Available"] = np.array([0])
+        vessel_groups["Other"] = np.concatenate([
+            np.arange(1, 21), np.arange(23, 30), np.arange(33, 35),
+            np.arange(38, 52), np.arange(53, 60), np.arange(90, 1000),
+            np.arange(1005, 1012), [1018, 1020, 1022]
+        ])
+        vessel_groups["Passenger"] = np.concatenate([np.arange(60, 70), np.arange(1012, 1016)])
+        vessel_groups["Pleasure Craft"] = np.array([36, 37, 1019])
+        vessel_groups["Tanker"] = np.concatenate([np.arange(80, 90), [1017, 1024]])
+        vessel_groups["Tug Tow"] = np.array([21, 22, 31, 32, 52, 1023, 1025])
+
+        # Map type code to group name
+        self.map_to_vessel_group = {}
+        for vg in vessel_groups:
+            for i in vessel_groups[vg]:
+                self.map_to_vessel_group[int(i)] = vg
+
+        # Map group name to group ID
+        self.vessel_group_to_id = {v: i for i, v in enumerate(sorted(set(self.map_to_vessel_group.values())))}
+
+        # Map group ID to group name
+        self.vessel_group_id_to_group = {i: v for v, i in self.vessel_group_to_id.items()}
+
+
+    def get_vessel_group_by_mmsi(self, mmsi):
+        """
+        Given an MMSI, return the vessel group name.
+        """
+        # Find the first occurrence of this MMSI in the dataframe
+        row = self.df[self.df['MMSI'] == mmsi] # Filter by MMSI
+        if row.empty:
+            return "Unknown"
+        type_code = int(row.iloc[0]['VesselType']) 
+        return self.map_to_vessel_group.get(type_code, "Unknown")
+
+    def get_vessel_group_id_by_mmsi(self, mmsi):
+        """
+        Given an MMSI, return the vessel group ID.
+        """
+        group_name = self.get_vessel_group_by_mmsi(mmsi)
+        return self.vessel_group_to_id.get(group_name, -1)
+    
     def process_AIS_data(self):
         print("Processing AIS data...")
         self.remove_AIS_artifacts()
@@ -92,9 +169,7 @@ class AISTrajectoryRegressionDataset(Dataset):
                 
             # Store the state space trajectories for every MMSI
             self.trajectories_by_mmsi.append((mmsi, seconds_since_start, state_space_trajectory))
-                
-
-        
+            
     def ais_to_state_space(self, LON, LAT, Heading, SOG):
         x = 111320 * LON
         y = 111320 * LAT
@@ -121,7 +196,6 @@ class AISTrajectoryRegressionDataset(Dataset):
         """
         Remove artifacts from the AIS data. Removed based on invalid msgs as defined by: https://www.navcen.uscg.gov/ais-class-a-reports
         """
-        
         start_row_count = self.df.shape[0]
         self.df = self.df[self.df['COG'] != 360]
         self.df = self.df[self.df['SOG'] != 102.3]
@@ -132,12 +206,57 @@ class AISTrajectoryRegressionDataset(Dataset):
         
         print(f"Removed {start_row_count - end_row_count} out of {start_row_count} rows due to invalid COG, SOG, LAT, or Heading values.")
 
+    def scale_trajectories(self):
+        """
+        Scale each MMSI's trajectory independently and store the scalers.
+        """
+        self.scalers_by_mmsi = {}
+        scaled_trajectories = []
+        
+        
+        for mmsi, times, traj in tqdm(self.trajectories_by_mmsi, desc="Scaling trajectories for each MMSI"):
+            # Fit scalers for this ship
+            state_scaler = StandardScaler().fit(traj)
+            time_scaler = StandardScaler().fit(times.reshape(-1, 1))
+            # Transform
+            scaled_traj = state_scaler.transform(traj)
+            scaled_times = time_scaler.transform(times.reshape(-1, 1)).flatten()
+            # Store
+            scaled_trajectories.append((mmsi, scaled_times, scaled_traj))
+            self.scalers_by_mmsi[mmsi] = {
+                'state_scaler': state_scaler,
+                'time_scaler': time_scaler
+            }
+            
+        self.scaled_trajectories_by_mmsi = scaled_trajectories
     
+    
+    # def inverse_transform(self, mmsi, scaled_times, scaled_traj):
+    #     """
+    #     Inverse transform scaled data for a given MMSI.
+    #     """
+    #     state_scaler = self.scalers_by_mmsi[mmsi]['state_scaler']
+    #     time_scaler = self.scalers_by_mmsi[mmsi]['time_scaler']
+    #     orig_traj = state_scaler.inverse_transform(scaled_traj)
+    #     orig_times = time_scaler.inverse_transform(scaled_times.reshape(-1, 1)).flatten()
+    #     return orig_times, orig_traj
+    def print_stats(self):
+        """
+        Print statistics about the dataset.
+        """
+        print("\n===== Dataset Statistics =====")
+        print(f"Total number of AIS messages: {len(self.df)}")
+        print(f"Number of unique MMSIs: {len(self.trajectories_by_mmsi)}")
+        print(f"Date range: {self.df['BaseDateTime'].min()} to {self.df['BaseDateTime'].max()}")
     def __len__(self):
         return len(self.trajectories_by_mmsi) # subtract 1 since this is single step state prediction
     
     def __getitem__(self, idx):
-        mmsi, times, state_trajectory = self.trajectories_by_mmsi[idx]
+        if self.scale_trajectories:
+            mmsi, times, state_trajectory = self.scaled_trajectories_by_mmsi[idx]
+        else:
+            mmsi, times, state_trajectory = self.trajectories_by_mmsi[idx]
+        
         return (
             mmsi,
             torch.from_numpy(times).float().to(self.device), 
