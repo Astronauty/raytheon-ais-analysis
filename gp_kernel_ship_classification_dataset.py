@@ -1,6 +1,6 @@
 import torch
 from torch.utils.data import Dataset
-
+from sklearn.model_selection import train_test_split
 
 class GPKernelShipClassificationDataset(Dataset):
     """
@@ -34,7 +34,6 @@ class GPKernelShipClassificationDataset(Dataset):
             self.data.append((mmsi, kernel_params_tensor, group_id))
             self.mmsis.append(mmsi)
 
-        
     
     def extract_kernel_params(self, model):
         """_summary_

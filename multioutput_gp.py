@@ -52,9 +52,9 @@ class MultiOutputExactGPModel(gpytorch.models.ExactGP):
 def train_model(model, likelihood, train_x, train_y, num_epochs=500, lr=0.01, mmsi=None):
     # Log the training loss to TensorBoard
     if mmsi is None:
-        log_dir = f"logs/{mmsi}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        log_dir = f"logs/gp_regression/{mmsi}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     else:
-        log_dir = f"logs/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        log_dir = f"logs/gp_regression/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
         
     writer = SummaryWriter(log_dir=log_dir)
     

@@ -4,7 +4,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 # from torchvision import datasets, transforms
 
-class KernelShipClassificationNetwork(nn.Module):
+class GPKernelShipClassificationNetwork(nn.Module):
     def __init__(self, input_dim, num_classes, hidden_dim=32):
         super().__init__()
         
