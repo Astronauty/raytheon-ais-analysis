@@ -38,6 +38,8 @@ class AISTrajectoryRegressionDataset(Dataset):
         else:
             self.create_combined_df(date_range) # combined csvs into self.df
             self.process_AIS_data()
+            os.makedirs(processed_data_dir, exist_ok=True)
+            
             with open(cache_filename, "wb") as f:
                 pickle.dump({
                     'df': self.df,
@@ -53,8 +55,9 @@ class AISTrajectoryRegressionDataset(Dataset):
         
 
         # self.df = pd.read_csv(csv_path)
-        train_df, test_df = train_test_split(self.df, test_size=0.2)
-        
+        # train_df, test_df = train_test_split(self.df, test_size=0.2)
+    
+
     def create_combined_df(self, date_range):
         """
         Create a combined dataframe from multiple CSV files.
