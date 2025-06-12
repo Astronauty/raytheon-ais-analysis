@@ -1,6 +1,7 @@
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import torch
+from tqdm import tqdm
 
 class GPKernelShipClassificationTrainer:
     def __init__(self, model, train_loader, test_loader, criterion, optimizer, device):
@@ -15,7 +16,7 @@ class GPKernelShipClassificationTrainer:
         self.writer = SummaryWriter(log_dir=log_dir)
 
     def train(self, num_epochs=20):
-        for epoch in range(num_epochs):
+        for epoch in tqdm(range(num_epochs), desc="GP Kernel Ship Classification Training"):
             # Train
             self.model.train()
             running_loss = 0.0
