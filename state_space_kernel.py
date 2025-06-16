@@ -28,15 +28,11 @@ class StateSpaceKernel(gpytorch.kernels.Kernel):
         # Register parameters with constraints
         self.register_parameter("raw_m", torch.nn.Parameter(torch.tensor(float(np.log(m)))))
         self.register_parameter("raw_I", torch.nn.Parameter(torch.tensor(float(np.log(I)))))
-        # self.register_parameter("raw_q", torch.nn.Parameter(torch.tensor(float(np.log(q)))))
-        # self.register_parameter("raw_r", torch.nn.Parameter(torch.tensor(float(np.log(r)))))
-        
+
         # Register constraints
         self.register_constraint("raw_m", gpytorch.constraints.Positive())
         self.register_constraint("raw_I", gpytorch.constraints.Positive())
-        # self.register_constraint("raw_q", gpytorch.constraints.Positive())
-        # self.register_constraint("raw_r", gpytorch.constraints.Positive())
-        
+
         self.dt = dt
         self.register_buffer("timesteps", timesteps)
         
@@ -61,10 +57,18 @@ class StateSpaceKernel(gpytorch.kernels.Kernel):
             scaled_kernel = gpytorch.kernels.ScaleKernel(base_kernel)
             scaled_kernel.outputscale = 1.0  # Set initial outputscale
             
+            
             self.force_kernels.append(scaled_kernel)
+            
+            
+        # Cache matrix exponentials for system dynamics
+        self._A = None
+        self._A_np = None
+        
+        self.exp_cache = {}
         
         # Print initial kernel parameters to verify
-        self.print_kernel_params()
+        # self.print_kernel_params()
         
     # Properties for transformed parameters
     @property
@@ -74,14 +78,7 @@ class StateSpaceKernel(gpytorch.kernels.Kernel):
     @property
     def I(self):
         return self.raw_I_constraint.transform(self.raw_I)
-    
-    # @property
-    # def q(self):
-    #     return self.raw_q_constraint.transform(self.raw_q)
-    
-    # @property
-    # def r(self):
-    #     return self.raw_r_constraint.transform(self.raw_r)
+
     def print_kernel_params(self):
         for i, kernel in enumerate(self.force_kernels):
             print(f"Force kernel {i}:")
@@ -105,6 +102,11 @@ class StateSpaceKernel(gpytorch.kernels.Kernel):
         B[5, 2] = 1/I_val
         
         C = torch.eye(6, device=self.timesteps.device)
+        
+        
+        # Cache the matrix exponentials for the system dynamics
+        self._A = A
+        self._A_np = A.cpu().numpy()
         
         
         return A, B, C
@@ -154,6 +156,21 @@ class StateSpaceKernel(gpytorch.kernels.Kernel):
     #                 cov = cov + ku.item() * (Ak @ Bi @ Bi.T @ Al.T)
         
     #     return cov
+    
+    
+    def _get_matrix_exp(self, time_diff):
+        """Get cached matrix exponential or compute and cache it"""
+        # Round to reduce numerical precision issues in cache keys
+        time_diff = round(time_diff, 1)
+        
+        if time_diff not in self.exp_cache:
+            # Compute and cache
+            exp_result = expm(self._A_np * time_diff)
+            self.exp_cache[time_diff] = torch.tensor(exp_result, device=self.timesteps.device)
+        
+        return self.exp_cache[time_diff]
+
+
 
     # Vectorized version of _latent_force_cov
     def _latent_force_cov(self, t1_idx, t2_idx):
@@ -195,40 +212,51 @@ class StateSpaceKernel(gpytorch.kernels.Kernel):
 
         return cov
         
-    # def forward(self, x1, x2, diag=False, **params):
-    #     """
-    #     Compute the kernel matrix between inputs x1 and x2.
-        
-    #     Args:
-    #         x1 (torch.Tensor): First input tensor of shape (batch_size, 1)
-    #         x2 (torch.Tensor): Second input tensor of shape (batch_size, 1)
-    #         diag (bool): Return diagonal of kernel matrix
+    
+    ### Use cached matrix exponentials for efficiency
+    # def _latent_force_cov(self, t1_idx, t2_idx):
+    #     A, B, C = self._setup_system_matrices()
+    #     cov = torch.zeros(self.n_states, self.n_states, device=self.timesteps.device)
+    #     t1 = self.timesteps[t1_idx].item()
+    #     t2 = self.timesteps[t2_idx].item()
+
+    #     timesteps = self.timesteps.cpu().numpy()
+    #     tk_valid = timesteps[timesteps <= t1]
+    #     tl_valid = timesteps[timesteps <= t2]
+
+    #     for i in range(self.n_inputs):
+    #         kernel = self.force_kernels[i]
+    #         Bi = B[:, i:i+1]
+
+    #         # Use cached matrix exponentials instead of recomputing
+    #         Ak_all = []
+    #         for tk in tk_valid:
+    #             Ak_all.append(self._get_matrix_exp(t1 - tk))
             
-    #     Returns:
-    #         torch.Tensor: Kernel matrix of shape (batch_size_1, batch_size_2, n_outputs, n_outputs)
-    #                      for direct use in the MultiOutputStateSpaceGPModel
-    #     """
-    #     if diag:
-    #         return self._forward_diag(x1, x2)
-            
-    #     n1, n2 = x1.size(0), x2.size(0)
-        
-    #     _, _, C = self._setup_system_matrices()
-        
-    #     batch_size1, batch_size2 = n1, n2
-    #     n_outputs = self.n_outputs
-    #     full_cov = torch.zeros(batch_size1, batch_size2, n_outputs, n_outputs, device=x1.device)
-        
-    #     for i in range(n1): 
-    #         for j in range(n2):
-    #             t1_idx, t2_idx = x1[i, 0].long(), x2[j, 0].long()
-    #             cov_x = self._latent_force_cov(t1_idx, t2_idx)
-    #             output_cov = C @ cov_x @ C.T
-    #             full_cov[i, j, :, :] = output_cov
+    #         Al_all = []
+    #         for tl in tl_valid:
+    #             Al_all.append(self._get_matrix_exp(t2 - tl))
 
-    #     return full_cov
+    #         # Stack if not already tensors
+    #         if not isinstance(Ak_all[0], torch.Tensor):
+    #             Ak_all = torch.stack(Ak_all)
+    #             Al_all = torch.stack(Al_all)
 
+    #         # Vectorized kernel computation
+    #         tk_tensor = torch.tensor(tk_valid, device=self.timesteps.device).unsqueeze(1)
+    #         tl_tensor = torch.tensor(tl_valid, device=self.timesteps.device).unsqueeze(1)
+    #         ku_mat = kernel(tk_tensor, tl_tensor).to_dense()  # [K, L]
 
+    #         # Compute contributions
+    #         for k in range(len(tk_valid)):
+    #             Ak = Ak_all[k]
+    #             for l in range(len(tl_valid)):
+    #                 Al = Al_all[l]
+    #                 ku = ku_mat[k, l].item()
+    #                 cov = cov + ku * (Ak @ Bi @ Bi.T @ Al.T)
+
+    #     return cov
+   
     def forward(self, x1, x2=None, diag=False, **params):
         """
         Compute the kernel matrix between inputs x1 and x2.

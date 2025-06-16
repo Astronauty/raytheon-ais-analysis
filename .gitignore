@@ -1,6 +1,12 @@
 data/*
 !data/.gitkeep
 
+runs/
+logs/
+**/tensorboard/
+**/tb_logs/
+events.out.tfevents.*
+
 .DS_Store
 
 .vscode/*
