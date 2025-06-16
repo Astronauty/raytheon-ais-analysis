@@ -28,14 +28,14 @@ class StateSpaceKernel(gpytorch.kernels.Kernel):
         # Register parameters with constraints
         self.register_parameter("raw_m", torch.nn.Parameter(torch.tensor(float(np.log(m)))))
         self.register_parameter("raw_I", torch.nn.Parameter(torch.tensor(float(np.log(I)))))
-        self.register_parameter("raw_q", torch.nn.Parameter(torch.tensor(float(np.log(q)))))
-        self.register_parameter("raw_r", torch.nn.Parameter(torch.tensor(float(np.log(r)))))
+        # self.register_parameter("raw_q", torch.nn.Parameter(torch.tensor(float(np.log(q)))))
+        # self.register_parameter("raw_r", torch.nn.Parameter(torch.tensor(float(np.log(r)))))
         
         # Register constraints
         self.register_constraint("raw_m", gpytorch.constraints.Positive())
         self.register_constraint("raw_I", gpytorch.constraints.Positive())
-        self.register_constraint("raw_q", gpytorch.constraints.Positive())
-        self.register_constraint("raw_r", gpytorch.constraints.Positive())
+        # self.register_constraint("raw_q", gpytorch.constraints.Positive())
+        # self.register_constraint("raw_r", gpytorch.constraints.Positive())
         
         self.dt = dt
         self.register_buffer("timesteps", timesteps)
@@ -45,11 +45,27 @@ class StateSpaceKernel(gpytorch.kernels.Kernel):
         self.n_outputs = 6
         
         # Force kernels (one per input)
-        self.force_kernels = torch.nn.ModuleList([
-            gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel()) 
-            for _ in range(self.n_inputs)
-        ])
-    
+        # self.force_kernels = torch.nn.ModuleList([
+        #     gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel()) 
+        #     for _ in range(self.n_inputs)
+        # ])
+            
+        self.force_kernels = torch.nn.ModuleList()
+        for i in range(self.n_inputs):
+            # Create RBF kernel with explicit lengthscale initialization
+            base_kernel = gpytorch.kernels.RBFKernel()
+            # Initialize lengthscale - critical for learning dynamics
+            base_kernel.lengthscale = 1.0  # Set initial lengthscale
+            
+            # Wrap in ScaleKernel and initialize outputscale
+            scaled_kernel = gpytorch.kernels.ScaleKernel(base_kernel)
+            scaled_kernel.outputscale = 1.0  # Set initial outputscale
+            
+            self.force_kernels.append(scaled_kernel)
+        
+        # Print initial kernel parameters to verify
+        self.print_kernel_params()
+        
     # Properties for transformed parameters
     @property
     def m(self):
@@ -59,20 +75,25 @@ class StateSpaceKernel(gpytorch.kernels.Kernel):
     def I(self):
         return self.raw_I_constraint.transform(self.raw_I)
     
-    @property
-    def q(self):
-        return self.raw_q_constraint.transform(self.raw_q)
+    # @property
+    # def q(self):
+    #     return self.raw_q_constraint.transform(self.raw_q)
     
-    @property
-    def r(self):
-        return self.raw_r_constraint.transform(self.raw_r)
-    
+    # @property
+    # def r(self):
+    #     return self.raw_r_constraint.transform(self.raw_r)
+    def print_kernel_params(self):
+        for i, kernel in enumerate(self.force_kernels):
+            print(f"Force kernel {i}:")
+            print(f"  Outputscale: {kernel.outputscale.item()}")
+            print(f"  Lengthscale: {kernel.base_kernel.lengthscale.item()}")
+        
     def _setup_system_matrices(self):
         """Create system matrices based on current parameters"""
         m_val = self.m.item()
         I_val = self.I.item()
-        q_val = self.q.item()
-        r_val = self.r.item()
+        # q_val = self.q.item()
+        # r_val = self.r.item()
         
         # Continuous-time system matrices
         A = torch.zeros(6, 6, device=self.timesteps.device)
@@ -174,50 +195,65 @@ class StateSpaceKernel(gpytorch.kernels.Kernel):
 
         return cov
         
-    def forward(self, x1, x2, diag=False, **params):
+    # def forward(self, x1, x2, diag=False, **params):
+    #     """
+    #     Compute the kernel matrix between inputs x1 and x2.
+        
+    #     Args:
+    #         x1 (torch.Tensor): First input tensor of shape (batch_size, 1)
+    #         x2 (torch.Tensor): Second input tensor of shape (batch_size, 1)
+    #         diag (bool): Return diagonal of kernel matrix
+            
+    #     Returns:
+    #         torch.Tensor: Kernel matrix of shape (batch_size_1, batch_size_2, n_outputs, n_outputs)
+    #                      for direct use in the MultiOutputStateSpaceGPModel
+    #     """
+    #     if diag:
+    #         return self._forward_diag(x1, x2)
+            
+    #     n1, n2 = x1.size(0), x2.size(0)
+        
+    #     _, _, C = self._setup_system_matrices()
+        
+    #     batch_size1, batch_size2 = n1, n2
+    #     n_outputs = self.n_outputs
+    #     full_cov = torch.zeros(batch_size1, batch_size2, n_outputs, n_outputs, device=x1.device)
+        
+    #     for i in range(n1): 
+    #         for j in range(n2):
+    #             t1_idx, t2_idx = x1[i, 0].long(), x2[j, 0].long()
+    #             cov_x = self._latent_force_cov(t1_idx, t2_idx)
+    #             output_cov = C @ cov_x @ C.T
+    #             full_cov[i, j, :, :] = output_cov
+
+    #     return full_cov
+
+
+    def forward(self, x1, x2=None, diag=False, **params):
         """
         Compute the kernel matrix between inputs x1 and x2.
-        
-        Args:
-            x1 (torch.Tensor): First input tensor of shape (batch_size, 1)
-            x2 (torch.Tensor): Second input tensor of shape (batch_size, 1)
-            diag (bool): Return diagonal of kernel matrix
-            
-        Returns:
-            torch.Tensor: Kernel matrix of shape (batch_size_1, batch_size_2, n_outputs, n_outputs)
-                         for direct use in the MultiOutputStateSpaceGPModel
         """
-        if diag:
+        if x2 is None:
+            x2 = x1
+            
+        if diag and not self.training:
             return self._forward_diag(x1, x2)
             
         n1, n2 = x1.size(0), x2.size(0)
         
         _, _, C = self._setup_system_matrices()
         
-        batch_size1, batch_size2 = n1, n2
-        n_outputs = self.n_outputs
-        full_cov = torch.zeros(batch_size1, batch_size2, n_outputs, n_outputs, device=x1.device)
+        # First calculate the full covariance matrix with shape [T, T, D, D]
+        # K = torch.zeros(n1, n2, self.n_outputs, self.n_outputs, device=x1.device)
+        K = torch.zeros(n1, n2, device=x1.device)
         
-        for i in range(n1):
+        for i in range(n1): 
             for j in range(n2):
                 t1_idx, t2_idx = x1[i, 0].long(), x2[j, 0].long()
                 cov_x = self._latent_force_cov(t1_idx, t2_idx)
-                output_cov = C @ cov_x @ C.T
-                full_cov[i, j, :, :] = output_cov
-
-        return full_cov
-    
-    def _forward_diag(self, x1, x2):
-        """Compute diagonal of kernel matrix"""
-        n = x1.size(0)
-        res = torch.zeros(n, device=x1.device)
-        
-        _, _, C = self._setup_system_matrices()
-        
-        for i in range(n):
-            t_idx = x1[i, 0].long()
-            cov_x = self._latent_force_cov(t_idx, t_idx)
-            output_cov = C @ cov_x @ C.T
-            res[i] = output_cov[0, 0]
-            
-        return res
+                output_cov = C @ cov_x @ C.T 
+                # covar_matrix[i, j, :, :] = output_cov
+             
+                K[i, j] = torch.norm(output_cov, p='fro') ** 2 
+                # K[i, j, :, :] = output_cov
+        return K
