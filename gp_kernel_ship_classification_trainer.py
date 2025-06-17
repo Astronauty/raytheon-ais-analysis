@@ -58,14 +58,14 @@ class GPKernelShipClassificationTrainer:
             test_loss = test_loss / test_total
             test_acc = test_correct / test_total
             
-        # --- Logging ---
-        print(f"Epoch {epoch+1}/{num_epochs} | "
-                f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
-                f"Test Loss: {test_loss:.4f} | Test Acc: {test_acc:.4f}")
-        self.writer.add_scalar("Loss/train", train_loss, epoch)
-        self.writer.add_scalar("Accuracy/train", train_acc, epoch)
-        self.writer.add_scalar("Loss/test", test_loss, epoch)
-        self.writer.add_scalar("Accuracy/test", test_acc, epoch)
-        
+            # --- Logging ---
+            # print(f"Epoch {epoch+1}/{num_epochs} | "
+            #         f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
+            #         f"Test Loss: {test_loss:.4f} | Test Acc: {test_acc:.4f}")
+            self.writer.add_scalar("Loss/train", train_loss, epoch)
+            self.writer.add_scalar("Accuracy/train", train_acc, epoch)
+            self.writer.add_scalar("Loss/test", test_loss, epoch)
+            self.writer.add_scalar("Accuracy/test", test_acc, epoch)
+            
         self.writer.flush()
         self.writer.close()

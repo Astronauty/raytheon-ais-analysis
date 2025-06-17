@@ -8,6 +8,7 @@ from control import *
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
+import os
 
 sns.set_theme(style="whitegrid")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -49,14 +50,22 @@ class MultiOutputExactGPModel(gpytorch.models.ExactGP):
         return gpytorch.distributions.MultitaskMultivariateNormal(mean_x, covar_x)
     
 
-def train_model(model, likelihood, train_x, train_y, num_epochs=500, lr=0.01, mmsi=None):
+def train_model(model, likelihood, train_x, train_y, num_epochs=500, lr=0.01, mmsi=None, session_id=None):
     # Log the training loss to TensorBoard
-    if mmsi is None:
-        log_dir = f"logs/gp_regression/{mmsi}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-    else:
-        log_dir = f"logs/gp_regression/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    # if mmsi is None:
+    #     log_dir = f"logs/gp_regression/{mmsi}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    # else:
+    #     log_dir = f"logs/gp_regression/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
         
-    writer = SummaryWriter(log_dir=log_dir)
+    # writer = SummaryWriter(log_dir=log_dir)
+    
+    writer = None
+    if session_id:
+        log_dir = f"logs/gp_regression/{session_id}"
+        if mmsi:
+            log_dir = f"{log_dir}/mmsi_{mmsi}"
+        os.makedirs(log_dir, exist_ok=True)
+        writer = SummaryWriter(log_dir=log_dir)
     
     model.to(device)
     likelihood.to(device)

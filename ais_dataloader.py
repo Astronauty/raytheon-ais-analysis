@@ -323,6 +323,10 @@ class AISTrajectoryRegressionDataset(Dataset):
         
         if return_counts:
             return group_counts
+        
+    def get_all_mmsis(self):
+        """Return a list of all unique MMSI values in the dataset."""
+        return pd.unique(self.df['MMSI'].values).tolist()
     
     def __len__(self):
         return len(self.trajectories_by_mmsi) # subtract 1 since this is single step state prediction

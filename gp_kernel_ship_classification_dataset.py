@@ -53,16 +53,16 @@ class GPKernelShipClassificationDataset(Dataset):
 
 
         # Extract the specific kernel parameters as before
-        try:
-            kernels = model.covar_module.data_covar_module.kernels
-            # RBF kernel assumed at index 0, Linear at index 1
-            params['rbf_lengthscale'] = kernels[0].lengthscale.item()
-            params['linear_variance'] = kernels[1].variance.item()
-        except Exception as e:
-            print(f"Error extracting specific kernel parameters: {str(e)}")
-            # Provide fallback values
-            params['rbf_lengthscale'] = 1.0
-            params['linear_variance'] = 1.0
+        # try:
+        #     kernels = model.covar_module.data_covar_module.kernels
+        #     # RBF kernel assumed at index 0, Linear at index 1
+        #     params['rbf_lengthscale'] = kernels[0].lengthscale.item()
+        #     params['linear_variance'] = kernels[1].variance.item()
+        # except Exception as e:
+        #     print(f"Error extracting specific kernel parameters: {str(e)}")
+        #     # Provide fallback values
+        #     params['rbf_lengthscale'] = 1.0
+        #     params['linear_variance'] = 1.0
         
         # Add all model parameters
         for param_name, param in model.named_parameters():
@@ -115,36 +115,43 @@ class GPKernelShipClassificationDataset(Dataset):
     def __getitem__(self, idx):
         mmsi, kernel_params, group_id = self.data[idx]
 
-        # Unscale kernel params if scalers are provided
-        rbf_lengthscale = kernel_params[0].item()
-        linear_variance = kernel_params[1].item()
+        # # If scalers are provided, unscale all kernel parameters
+        # if self.scalers_by_mmsi is not None and mmsi in self.scalers_by_mmsi:
+        #     scaler_dict = self.scalers_by_mmsi[mmsi]
+        #     param_names = self.get_parameter_names()
+        #     kernel_params_unscaled = []
+            
+        #     for i, param_name in enumerate(param_names):
+        #         param_value = kernel_params[i].item()
+                
+        #         # Apply appropriate unscaling based on parameter type
+        #         if 'lengthscale' in param_name and 'time_scaler' in scaler_dict:
+        #             # Time-related parameters
+        #             time_scaler = scaler_dict['time_scaler']
+        #             unscaled_value = param_value * time_scaler.scale_[0]
+        #         elif 'variance' in param_name and 'state_scaler' in scaler_dict:
+        #             # Variance parameters
+        #             state_scaler = scaler_dict['state_scaler']
+        #             unscaled_value = param_value * (state_scaler.scale_[0] ** 2)
+        #         elif any(x in param_name for x in ['std', 'mean', 'min', 'max']) and 'state_scaler' in scaler_dict:
+        #             # Statistical parameters from state
+        #             state_scaler = scaler_dict['state_scaler']
+        #             unscaled_value = param_value * state_scaler.scale_[0]
+        #         else:
+        #             # Default: no unscaling for parameters we don't know how to unscale
+        #             unscaled_value = param_value
+                    
+        #         kernel_params_unscaled.append(unscaled_value)
+            
+        #     # Convert back to tensor
+        #     kernel_params_unscaled = torch.tensor(
+        #         kernel_params_unscaled,
+        #         dtype=kernel_params.dtype,
+        #         device=kernel_params.device
+        #     )
+        # else:
+        #     kernel_params_unscaled = kernel_params
 
-        if self.scalers_by_mmsi is not None and mmsi in self.scalers_by_mmsi:
-            scaler_dict = self.scalers_by_mmsi[mmsi]
-            # Unscale rbf_lengthscale using time_scaler (for StandardScaler)
-            if 'time_scaler' in scaler_dict:
-                time_scaler = scaler_dict['time_scaler']
-                # For StandardScaler, unscale: x_real = x_scaled * scale_ + mean_
-                rbf_lengthscale_unscaled = rbf_lengthscale * time_scaler.scale_[0]
-            else:
-                rbf_lengthscale_unscaled = rbf_lengthscale
-
-            # Unscale linear_variance using state_scaler (for StandardScaler)
-            if 'state_scaler' in scaler_dict:
-                state_scaler = scaler_dict['state_scaler']
-                # For StandardScaler, variance scales as (scale_)^2
-                linear_variance_unscaled = linear_variance * (state_scaler.scale_[0] ** 2)
-            else:
-                linear_variance_unscaled = linear_variance
-
-            kernel_params_unscaled = torch.tensor(
-                [rbf_lengthscale_unscaled, linear_variance_unscaled],
-                dtype=kernel_params.dtype,
-                device=kernel_params.device
-            )
-        else:
-            kernel_params_unscaled = kernel_params
-
-        return mmsi, kernel_params.to(self.device), group_id
-        # return 0
+        # return mmsi, kernel_params_unscaled.to(self.device), group_id
+        return mmsi, kernel_params, group_id
 
