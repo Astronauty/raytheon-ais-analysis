@@ -67,7 +67,8 @@ def train_model(model, likelihood, train_x, train_y, num_epochs=500, lr=0.01, mm
     optimizer = torch.optim.Adam(model.parameters(), lr= 0.01)
     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
     
-    for i in tqdm(range(num_epochs), desc=f"GP Training Progress"):
+    # for i in tqdm(range(num_epochs), desc=f"GP Training Progress"):
+    for i in range(num_epochs):
         optimizer.zero_grad()
         output = model(train_x)
         loss = -mll(output, train_y)

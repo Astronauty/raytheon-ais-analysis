@@ -1,6 +1,17 @@
+"""
+cli_ais_downloader.py
+
+This script provides a command-line interface for downloading AIS (Automatic Identification System) data over a specified date range.
+It parses start and end dates from command-line arguments, generates the corresponding date range, and uses the AISDataDownloader
+class to download and clean up AIS data files.
+
+Functions:
+    main(): Parses command-line arguments, validates dates, generates a date range, and manages the download and cleanup process.
+"""
 import argparse
 import pandas as pd 
 from ais_data_download import AISDataDownloader
+
 
 def main():
     parser = argparse.ArgumentParser(description="Download AIS data for a specified date range.")

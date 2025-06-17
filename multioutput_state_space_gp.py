@@ -10,18 +10,16 @@ from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from state_space_kernel import * 
 from gpytorch.means import MultitaskMean
-from gpytorch.kernels import MultitaskKernel
+from gpytorch.kernels import *
 from gpytorch.distributions import MultitaskMultivariateNormal
 from gpytorch.models import ApproximateGP
 from gpytorch.variational import CholeskyVariationalDistribution
 from gpytorch.variational import VariationalStrategy
 from gpytorch.variational import LMCVariationalStrategy
 
-
-
-
 sns.set_theme(style="whitegrid")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 
 class StateSpaceGPModel(gpytorch.models.ExactGP): 
@@ -47,7 +45,7 @@ class StateSpaceGPModel(gpytorch.models.ExactGP):
         )
         
         # self.covar_module = gpytorch.kernels.MultitaskKernel(
-        #     gpytorch.kernels.MaternKernel() + gpytorch.kernels.LinearKernel(),
+        #     gpytorch.kernels.RBFKernel() + gpytorch.kernels.LinearKernel(),
         #     num_tasks=num_tasks, rank=1
         #     )
         
@@ -62,46 +60,10 @@ class StateSpaceGPModel(gpytorch.models.ExactGP):
 
         return gpytorch.distributions.MultitaskMultivariateNormal(mean_x, covar_x)
     
-class ApproximateStateSpaceGPModel(ApproximateGP):
-    def __init__(self, num_latents, num_tasks=6):
-        inducing_points = torch.rand(num_latents, )
-        
-        # Set up variational distribution (one per inducing point)
-        variational_distribution = CholeskyVariationalDistribution(inducing_points.size(-2), batch_shape=torch.Size([num_tasks]))
-        
-        # Set up variational strategy
-        variational_strategy = LMCVariationalStrategy(VariationalStrategy(
-            self, inducing_points, variational_distribution, 
-            learn_inducing_locations=True),
-            num_tasks=num_tasks,
-            num_latents=num_latents,
-            latent_dim=-1                       
-            )
-        
-        super().__init__(variational_strategy)
-        
-        # Mean module
-        # self.mean_module = gpytorch.means.MultitaskMean(
-        #     gpytorch.means.ConstantMean(), num_tasks=num_tasks
-        # )
-        self.mean_module = gpytorch.means.ConstantMean(batch_shape=torch.Size([num_latents]))
-        
-        # State space kernel
-        self.base_kernel = StateSpaceKernel(batch_shape=torch.Size(batch_shape=[num_latents]))
-        
-        # Multitask kernel on top of state space kernel
-        self.covar_module = gpytorch.kernels.MultitaskKernel(
-            self.base_kernel, num_tasks=num_tasks, rank=1
-        )
-        self.num_tasks = num_tasks
-        
-    def forward(self, x):
-        mean_x = self.mean_module(x)
-        covar_x = self.covar_module(x)
-        return gpytorch.distributions.MultitaskMultivariateNormal(mean_x, covar_x)
-    
 
 def train_model(model, likelihood, train_x, train_y, num_epochs=500, lr=0.01, mmsi=None, session_id=None):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
     # Log the training loss to TensorBoard
     if mmsi is None:
         log_dir = f"logs/gp_regression/{session_id}/mmsi_{mmsi}"
@@ -199,7 +161,7 @@ def eval_model(model, likelihood, test_X):
     model.eval()
     likelihood.eval()
     
-    with torch.no_grad(), gpytorch.settings.fast_pred_var():
+    with torch.no_grad(), gpytorch.settings.fast_pred_var(), gpytorch.settings.cholesky_jitter(1e-3):
         # This returns a MultitaskMultivariateNormal object
         return likelihood(model(test_X))
 

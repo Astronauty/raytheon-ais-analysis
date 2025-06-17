@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timedelta
 import matplotlib.ticker as mticker
 import torch
-
+from matplotlib.patches import Patch
 
 def plot_single_ship_state_trajectory(mmsi, t, state_trajectory):
     # Plot time vs x, y, theta, x_dot, y_dot, theta_dot
@@ -122,7 +122,7 @@ def plot_single_ship_path(mmsi, t, state_trajectory):
     
     plt.figure(figsize=(15, 10))
     plt.plot(state_trajectory[:, 0], state_trajectory[:, 1], marker='o', markersize=2)
-    plt.title(f'Ship Path for MMSI {mmsi}')
+    plt.title(f'Ship Path for MMSI {mmsi} (Z-Score Scaled)')
     plt.xlabel('x (m)')
     plt.ylabel('y (m)')
     plt.grid()
@@ -130,68 +130,146 @@ def plot_single_ship_path(mmsi, t, state_trajectory):
     plt.show()
     
     
+# def plot_gp(train_x, train_y, test_x, observed_pred):
+#     # Define a colormap for each state
+#         colormap = sns.color_palette("colorblind", 6)
+
+#         with torch.no_grad():
+#             # Initialize plot with 2x3 subplots
+#             f, axes = plt.subplots(2, 3, figsize=(16, 9), sharex=True)
+
+#             # Get upper and lower confidence bounds
+#             lower, upper = observed_pred.confidence_region()
+
+#             # Labels for the DoFs
+#             dof_labels = ['x (m)', 'y (m)', r'$\theta$ (rad)', r'$\dot{x}$ (m/s)', r'$\dot{y}$ (m/s)', r'$\dot{\theta}$ (rad/s)']
+
+#             # Plot predictive means and confidence bounds for DoFs 1, 2, and 3 in the first row
+#             for i in range(3):
+#                 ax = axes[0, i]
+#                 # Plot training data as black stars
+#                 ax.scatter(train_x.cpu().numpy().flatten(), train_y.cpu().numpy()[:, i], color=colormap[i], marker='x', s=10)
+#                 # Plot predictive means
+#                 ax.plot(test_x.cpu().numpy().flatten(), observed_pred.mean[:, i].cpu().numpy(), color=colormap[i])
+#                 # Plot confidence bounds
+#                 lower_bound = lower[:, i].cpu().numpy()
+#                 upper_bound = upper[:, i].cpu().numpy()
+#                 if i == 0 or i == 1:
+#                     lower_bound /= 1.1
+#                     upper_bound *= 1.1
+#                 ax.fill_between(test_x.cpu().numpy().flatten(), lower_bound, upper_bound, color=colormap[i], alpha=0.2)
+#                 ax.set_ylabel(dof_labels[i])
+
+#             # Plot predictive means and confidence bounds for DoFs 4, 5, and 6 in the second row
+#             for i in range(3, 6):
+#                 ax = axes[1, i - 3]
+#                 # Plot training data as black stars
+#                 ax.scatter(train_x.cpu().numpy().flatten(), train_y.cpu().numpy()[:, i], color=colormap[i], marker='x', s=10)
+#                 # Plot predictive means
+#                 ax.plot(test_x.cpu().numpy().flatten(), observed_pred.mean[:, i].cpu().numpy(), color=colormap[i])
+#                 # Plot confidence bounds
+#                 lower_bound = lower[:, i].cpu().numpy()
+#                 upper_bound = upper[:, i].cpu().numpy()
+#                 if i == 0 or i == 1:
+#                     lower_bound /= 1.1
+#                     upper_bound *= 1.1
+                    
+#                 ax.fill_between(test_x.cpu().numpy().flatten(), lower_bound, upper_bound, color=colormap[i], alpha=0.2)
+#                 ax.set_ylabel(dof_labels[i])
+
+#             # Set common x-label
+#             for ax in axes[-1, :]:
+#                 ax.set_xlabel('Time (s)')
+
+#             # Create a single legend
+#             # legend_elements = [
+#             #     plt.Line2D([0], [0], color=colormap[i], lw=2, label=f'DoF {dof_labels[i]}') for i in range(6)
+#             # ]
+#             legend_elements = []
+#             legend_elements.append(plt.Line2D([0], [0], color='black', marker='.', label='Observed Data'))
+#             legend_elements.append(plt.Line2D([0], [0], color='black', linestyle='-', label='Predictive Mean'))
+#             f.legend(handles=legend_elements, loc='upper center', ncol=4, bbox_to_anchor=(0.5, 1.05))
+#             # Increase font size of axis labels
+#             for ax in axes.flat:
+#                 ax.xaxis.label.set_size(14)
+#                 ax.yaxis.label.set_size(14)
+#             plt.tight_layout()
+#             plt.show()
+
 def plot_gp(train_x, train_y, test_x, observed_pred):
     # Define a colormap for each state
-        colormap = sns.color_palette("colorblind", 6)
+    colormap = sns.color_palette("colorblind", 6)
 
-        with torch.no_grad():
-            # Initialize plot with 2x3 subplots
-            f, axes = plt.subplots(2, 3, figsize=(16, 9), sharex=True)
+    with torch.no_grad():
+        # Initialize plot with 2x3 subplots
+        f, axes = plt.subplots(2, 3, figsize=(14, 8), sharex=True)
 
-            # Get upper and lower confidence bounds
-            lower, upper = observed_pred.confidence_region()
+        # Get upper and lower confidence bounds
+        lower, upper = observed_pred.confidence_region()
 
-            # Labels for the DoFs
-            dof_labels = ['x (m)', 'y (m)', r'$\theta$ (rad)', r'$\dot{x}$ (m/s)', r'$\dot{y}$ (m/s)', r'$\dot{\theta}$ (rad/s)']
+        # Labels for the DoFs
+        dof_labels = ['x (m)', 'y (m)', r'$\theta$ (rad)', r'$\dot{x}$ (m/s)', r'$\dot{y}$ (m/s)', r'$\dot{\theta}$ (rad/s)']
 
-            # Plot predictive means and confidence bounds for DoFs 1, 2, and 3 in the first row
-            for i in range(3):
-                ax = axes[0, i]
-                # Plot training data as black stars
-                ax.scatter(train_x.cpu().numpy().flatten(), train_y.cpu().numpy()[:, i], color=colormap[i], marker='x')
-                # Plot predictive means
-                ax.plot(test_x.cpu().numpy().flatten(), observed_pred.mean[:, i].cpu().numpy(), color=colormap[i])
-                # Plot confidence bounds
-                lower_bound = lower[:, i].cpu().numpy()
-                upper_bound = upper[:, i].cpu().numpy()
-                if i == 0 or i == 1:
-                    lower_bound /= 1.1
-                    upper_bound *= 1.1
-                ax.fill_between(test_x.cpu().numpy().flatten(), lower_bound, upper_bound, color=colormap[i], alpha=0.2)
-                ax.set_ylabel(dof_labels[i])
+        # Plot predictive means and confidence bounds for DoFs 1, 2, and 3 in the first row
+        for i in range(3):
+            ax = axes[0, i]
+            # Plot confidence bounds first (so they're behind everything)
+            lower_bound = lower[:, i].cpu().numpy()
+            upper_bound = upper[:, i].cpu().numpy()
+            if i == 0 or i == 1:
+                lower_bound /= 1.1
+                upper_bound *= 1.1
+            ax.fill_between(test_x.cpu().numpy().flatten(), lower_bound, upper_bound, color=colormap[i], alpha=0.2)
+            
+            # Plot training data as smaller, more transparent scatter points
+            ax.scatter(train_x.cpu().numpy().flatten(), train_y.cpu().numpy()[:, i], 
+                      color='darkgray', marker='o', s=15, alpha=0.5, edgecolors='black', linewidths=0.5)
+            
+            # Plot predictive mean with thicker line
+            ax.plot(test_x.cpu().numpy().flatten(), observed_pred.mean[:, i].cpu().numpy(), 
+                   color=colormap[i], linewidth=2.5, linestyle='-')
+            
+            ax.set_ylabel(dof_labels[i])
 
-            # Plot predictive means and confidence bounds for DoFs 4, 5, and 6 in the second row
-            for i in range(3, 6):
-                ax = axes[1, i - 3]
-                # Plot training data as black stars
-                ax.scatter(train_x.cpu().numpy().flatten(), train_y.cpu().numpy()[:, i], color=colormap[i], marker='x')
-                # Plot predictive means
-                ax.plot(test_x.cpu().numpy().flatten(), observed_pred.mean[:, i].cpu().numpy(), color=colormap[i])
-                # Plot confidence bounds
-                lower_bound = lower[:, i].cpu().numpy()
-                upper_bound = upper[:, i].cpu().numpy()
-                if i == 0 or i == 1:
-                    lower_bound /= 1.1
-                    upper_bound *= 1.1
-                    
-                ax.fill_between(test_x.cpu().numpy().flatten(), lower_bound, upper_bound, color=colormap[i], alpha=0.2)
-                ax.set_ylabel(dof_labels[i])
+        # Plot predictive means and confidence bounds for DoFs 4, 5, and 6 in the second row
+        for i in range(3, 6):
+            ax = axes[1, i - 3]
+            # Plot confidence bounds first
+            lower_bound = lower[:, i].cpu().numpy()
+            upper_bound = upper[:, i].cpu().numpy()
+            if i == 0 or i == 1:
+                lower_bound /= 1.1
+                upper_bound *= 1.1
+            ax.fill_between(test_x.cpu().numpy().flatten(), lower_bound, upper_bound, color=colormap[i], alpha=0.2)
+            
+            # Plot training data as smaller, more transparent scatter points
+            ax.scatter(train_x.cpu().numpy().flatten(), train_y.cpu().numpy()[:, i], 
+                      color='darkgray', marker='o', s=15, alpha=0.5, edgecolors='black', linewidths=0.5)
+            
+            # Plot predictive mean with thicker line
+            ax.plot(test_x.cpu().numpy().flatten(), observed_pred.mean[:, i].cpu().numpy(), 
+                   color=colormap[i], linewidth=2.5, linestyle='-')
+            
+            ax.set_ylabel(dof_labels[i])
 
-            # Set common x-label
-            for ax in axes[-1, :]:
-                ax.set_xlabel('Time (s)')
+        # Set common x-label
+        for ax in axes[-1, :]:
+            ax.set_xlabel('Time (s)')
 
-            # Create a single legend
-            # legend_elements = [
-            #     plt.Line2D([0], [0], color=colormap[i], lw=2, label=f'DoF {dof_labels[i]}') for i in range(6)
-            # ]
-            legend_elements = []
-            legend_elements.append(plt.Line2D([0], [0], color='black', marker='.', label='Observed Data'))
-            legend_elements.append(plt.Line2D([0], [0], color='black', linestyle='-', label='Predictive Mean'))
-            f.legend(handles=legend_elements, loc='upper center', ncol=4, bbox_to_anchor=(0.5, 1.05))
-            # Increase font size of axis labels
-            for ax in axes.flat:
-                ax.xaxis.label.set_size(14)
-                ax.yaxis.label.set_size(14)
-            plt.tight_layout()
-            plt.show()
+        # Create a more informative legend
+        legend_elements = [
+            plt.Line2D([0], [0], marker='o', color='darkgray', markerfacecolor='darkgray',
+                      markeredgecolor='black', markersize=6, linewidth=0, label='Observed Data'),
+            plt.Line2D([0], [0], color=colormap[0], linewidth=2.5, label='Predictive Mean'),
+            Patch(facecolor=colormap[0], alpha=0.2, label='95% Confidence Interval')  # Fixed this line
+        ]
+        
+        f.legend(handles=legend_elements, loc='upper center', ncol=3)
+        
+        # Increase font size of axis labels
+        for ax in axes.flat:
+            ax.xaxis.label.set_size(14)
+            ax.yaxis.label.set_size(14)
+        
+        # plt.tight_layout()
+        # plt.show()

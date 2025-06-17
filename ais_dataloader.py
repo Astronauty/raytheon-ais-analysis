@@ -251,6 +251,79 @@ class AISTrajectoryRegressionDataset(Dataset):
         print(f"Total number of AIS messages: {len(self.df)}")
         print(f"Number of unique MMSIs: {len(self.trajectories_by_mmsi)}")
         print(f"Date range: {self.df['BaseDateTime'].min()} to {self.df['BaseDateTime'].max()}")
+    
+    def plot_vessel_group_histogram(self, figsize=(12, 6), show_counts=True, return_counts=False):
+        """
+        Plot a histogram of vessel groups in the dataset.
+        
+        Args:
+            figsize: Tuple specifying figure dimensions
+            show_counts: Whether to display count values above bars
+            return_counts: If True, return the count data
+            
+        Returns:
+            If return_counts is True, returns a pandas Series with group counts
+        """
+        import matplotlib.pyplot as plt
+        import pandas as pd
+        
+        # Get all unique MMSIs
+        mmsi_values = pd.unique(self.df['MMSI'].values)
+        vessel_groups = []
+        
+        # Get group for each MMSI
+        for mmsi in mmsi_values:
+            group = self.get_vessel_group_by_mmsi(mmsi)
+            vessel_groups.append((mmsi, group))
+        
+        # Convert to DataFrame for analysis
+        groups_df = pd.DataFrame(vessel_groups, columns=['MMSI', 'Group'])
+        group_counts = groups_df['Group'].value_counts().sort_index()
+        
+        # Create the plot
+        plt.figure(figsize=figsize)
+        ax = group_counts.plot(kind='bar', color='tab:blue')
+        plt.title('Distribution of Vessel Types')
+        plt.xlabel('Vessel Group')
+        plt.ylabel('Count')
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        
+        plt.xticks(rotation=45, ha='right')
+
+        # Add count labels if requested
+        if show_counts:
+            for i, count in enumerate(group_counts):
+                plt.text(i, count + 0.5, str(count), ha='center')
+        
+        # Create a mapping table showing group IDs
+        # group_id_map = pd.DataFrame({
+        #     'Group': list(self.vessel_group_to_id.keys()),
+        #     'ID': list(self.vessel_group_to_id.values())
+        # }).sort_values('ID')
+        
+        # # Display the ID mapping as a table
+        # table_ax = plt.axes([0.15, -0.25, 0.7, 0.2])  # [left, bottom, width, height]
+        # table_ax.axis('off')
+        # table = table_ax.table(
+        #     cellText=group_id_map.values,
+        #     colLabels=group_id_map.columns,
+        #     loc='center',
+        #     cellLoc='center'
+        # )
+        # table.auto_set_font_size(False)
+        # table.set_fontsize(10)
+        # table.scale(1, 1.5)
+        
+        # plt.subplots_adjust(bottom=0.3)  # Adjust main plot to make room for table
+        # plt.tight_layout()
+        
+        # Print summary statistics
+        # print(f"Total unique vessels: {len(mmsi_values)}")
+        print(f"Number of vessel groups: {len(group_counts)}")
+        
+        if return_counts:
+            return group_counts
+    
     def __len__(self):
         return len(self.trajectories_by_mmsi) # subtract 1 since this is single step state prediction
     
