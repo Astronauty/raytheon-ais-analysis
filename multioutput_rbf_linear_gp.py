@@ -516,7 +516,7 @@ def train_all_models(gp_regression_dataset, device):
             
             model = MultiOutputExactGPModel(X, Y, likelihood, num_outputs=num_outputs).to(device)
 
-            session_id = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+            session_id = datetime.now().strftime('%Y%m%d_%H%M%S')
 
             with gpytorch.settings.cholesky_jitter(1e-3):
                 loss, model, likelihood = train_model(model, likelihood, X, Y, num_epochs=50, lr=0.1, mmsi=mmsi, session_id=session_id)

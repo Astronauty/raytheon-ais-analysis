@@ -140,7 +140,7 @@ class AISTrajectoryRegressionDataset(Dataset):
         self.trajectories_by_mmsi = []
         self.MMSI_groups = self.df.groupby('MMSI')
         
-        for mmsi, group in self.MMSI_groups:
+        for mmsi, group in tqdm(self.MMSI_groups, desc="Standardizing trajectories for MMSI groups"):
             group = group.sort_values(by='BaseDateTime')  # Ensure sorted by time
             earliest_time = group['BaseDateTime'].min()
             group['SecondsSinceStart'] = (group['BaseDateTime'] - earliest_time).dt.total_seconds()
