@@ -252,20 +252,25 @@ class AISTrajectoryRegressionDataset(Dataset):
         print(f"Number of unique MMSIs: {len(self.trajectories_by_mmsi)}")
         print(f"Date range: {self.df['BaseDateTime'].min()} to {self.df['BaseDateTime'].max()}")
     
-    def plot_vessel_group_histogram(self, figsize=(12, 6), show_counts=True, return_counts=False):
+    def plot_vessel_group_histogram(self, figsize=(12, 6), show_counts=True, return_counts=False, fontsize=16):
         """
-        Plot a histogram of vessel groups in the dataset.
+        Plot a histogram of vessel groups in the dataset with increased font size.
         
         Args:
             figsize: Tuple specifying figure dimensions
             show_counts: Whether to display count values above bars
             return_counts: If True, return the count data
-            
+            fontsize: Base font size for plot elements (default=14)
+                
         Returns:
             If return_counts is True, returns a pandas Series with group counts
         """
         import matplotlib.pyplot as plt
         import pandas as pd
+        import seaborn as sns
+        
+        # Set a clean style with larger font sizes
+        sns.set_theme(style="whitegrid", font_scale=1.2)
         
         # Get all unique MMSIs
         mmsi_values = pd.unique(self.df['MMSI'].values)
@@ -280,45 +285,29 @@ class AISTrajectoryRegressionDataset(Dataset):
         groups_df = pd.DataFrame(vessel_groups, columns=['MMSI', 'Group'])
         group_counts = groups_df['Group'].value_counts().sort_index()
         
-        # Create the plot
+        # Create the plot with increased font size
         plt.figure(figsize=figsize)
         ax = group_counts.plot(kind='bar', color='tab:blue')
-        plt.title('Distribution of Vessel Types')
-        plt.xlabel('Vessel Group')
-        plt.ylabel('Count')
+        
+        # Increase font sizes
+        plt.title('Distribution of Vessel Types', fontsize=fontsize+4, fontweight='bold')
+        plt.xlabel('Vessel Group', fontsize=fontsize+2)
+        plt.ylabel('Count', fontsize=fontsize+2)
         plt.grid(axis='y', linestyle='--', alpha=0.7)
         
-        plt.xticks(rotation=45, ha='right')
-
+        # Increase tick label font size
+        plt.xticks(rotation=45, ha='right', fontsize=fontsize)
+        plt.yticks(fontsize=fontsize)
+        
         # Add count labels if requested
         if show_counts:
             for i, count in enumerate(group_counts):
-                plt.text(i, count + 0.5, str(count), ha='center')
+                plt.text(i, count + 0.5, str(count), ha='center', fontsize=fontsize-1)
         
-        # Create a mapping table showing group IDs
-        # group_id_map = pd.DataFrame({
-        #     'Group': list(self.vessel_group_to_id.keys()),
-        #     'ID': list(self.vessel_group_to_id.values())
-        # }).sort_values('ID')
-        
-        # # Display the ID mapping as a table
-        # table_ax = plt.axes([0.15, -0.25, 0.7, 0.2])  # [left, bottom, width, height]
-        # table_ax.axis('off')
-        # table = table_ax.table(
-        #     cellText=group_id_map.values,
-        #     colLabels=group_id_map.columns,
-        #     loc='center',
-        #     cellLoc='center'
-        # )
-        # table.auto_set_font_size(False)
-        # table.set_fontsize(10)
-        # table.scale(1, 1.5)
-        
-        # plt.subplots_adjust(bottom=0.3)  # Adjust main plot to make room for table
-        # plt.tight_layout()
+        # Adjust layout to make room for the larger fonts
+        plt.tight_layout()
         
         # Print summary statistics
-        # print(f"Total unique vessels: {len(mmsi_values)}")
         print(f"Number of vessel groups: {len(group_counts)}")
         
         if return_counts:

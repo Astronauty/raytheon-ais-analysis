@@ -203,12 +203,12 @@ def plot_gp(train_x, train_y, test_x, observed_pred):
     with torch.no_grad():
         # Initialize plot with 2x3 subplots
         f, axes = plt.subplots(2, 3, figsize=(14, 8), sharex=True)
-
+        f.suptitle("GPR Fits for Standardized State Trajectory", fontsize=16, y=1.02)
         # Get upper and lower confidence bounds
         lower, upper = observed_pred.confidence_region()
 
         # Labels for the DoFs
-        dof_labels = ['x (m)', 'y (m)', r'$\theta$ (rad)', r'$\dot{x}$ (m/s)', r'$\dot{y}$ (m/s)', r'$\dot{\theta}$ (rad/s)']
+        dof_labels = ['x (m)', 'y (m)', r'$\theta$ (rad)', r'$\dot{x}$', r'$\dot{y}$ ', r'$\dot{\theta}$']
 
         # Plot predictive means and confidence bounds for DoFs 1, 2, and 3 in the first row
         for i in range(3):
@@ -254,7 +254,7 @@ def plot_gp(train_x, train_y, test_x, observed_pred):
 
         # Set common x-label
         for ax in axes[-1, :]:
-            ax.set_xlabel('Time (s)')
+            ax.set_xlabel('Time')
 
         # Create a more informative legend
         legend_elements = [
@@ -271,5 +271,5 @@ def plot_gp(train_x, train_y, test_x, observed_pred):
             ax.xaxis.label.set_size(14)
             ax.yaxis.label.set_size(14)
         
-        # plt.tight_layout()
+        plt.tight_layout()
         # plt.show()
