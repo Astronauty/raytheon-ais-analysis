@@ -16,7 +16,7 @@ class GPKernelShipClassificationDataset(Dataset):
         Args:
             gp_regression_dataset (_type_): Dataset containing GP regression data. (Used to extract MMSI and class labels)
             models (_type_): Dictionary of fitted GP models per MMSI, where keys are MMSI and values are GP models.
-            device (_type_): _description_
+            device (_type_): Pytorch device to which the data should be moved (e.g., 'cpu' or 'cuda').
         """
         self.gp_regression_dataset = gp_regression_dataset
         self.models = models
